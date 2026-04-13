@@ -35,7 +35,7 @@ public class CollectionManager {
     }
 
     /**
-     * Возвращает информацию о коллекции (тип, дата создания, количество).
+     * Возвращает информацию о коллекции.
      */
     public String getInfo() {
         return "Тип коллекции: " + collection.getClass().getSimpleName() +
@@ -45,7 +45,6 @@ public class CollectionManager {
 
     /**
      * Возвращает отсортированный по имени список элементов в виде строки.
-     * Требование: сортировка по имени перед выводом.
      */
     public String showSortedByName() {
         if (collection.isEmpty()) return "Коллекция пуста.";
@@ -57,7 +56,7 @@ public class CollectionManager {
     }
 
     /**
-     * Возвращает дату создания элемента по ID (нужно для команды update).
+     * Возвращает дату создания элемента по ID.
      */
     public Date getCreationDateById(Long id) {
         return collection.stream()

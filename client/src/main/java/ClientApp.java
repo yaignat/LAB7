@@ -64,6 +64,8 @@ public class ClientApp {
     }
 
     private static String handleCommand(String cmd, String arg, ClientNetworkService network, LabWorkReader reader, Scanner scanner) throws Exception {
+        String response;
+
         switch (cmd.toLowerCase()) {
             case "help":
                 return "Доступные команды:\n" +
@@ -101,8 +103,23 @@ public class ClientApp {
 
             case "update":
                 if (arg == null) throw new IllegalArgumentException("Необходимо указать ID.");
+
                 long idUpdate = Long.parseLong(arg);
-                System.out.println("Ввод новых данных для элемента с ID=" + idUpdate);
+                String showResponse = network.sendCommand(new ShowCommand());
+
+                boolean exists = false;
+                if (showResponse != null && !showResponse.equals("Коллекция пуста.")) {
+                    String regex = "id=" + idUpdate + "[,\\}]";
+                    if (showResponse.matches("(?s).*" + regex + ".*")) {
+                        exists = true;
+                    }
+                }
+                if (!exists) {
+                    System.out.println("Ошибка: Элемент с ID=" + idUpdate + " не найден в коллекции.");
+                    System.out.println("Введите 'show', чтобы увидеть список доступных ID.");
+                    return "Обновление отменено: элемент не найден.";
+                }
+                System.out.println("Элемент найден. Ввод новых данных:");
                 return network.sendCommand(new UpdateCommand(idUpdate, reader.readLabWorkFromConsole()));
 
             case "filter_less_than_discipline":
