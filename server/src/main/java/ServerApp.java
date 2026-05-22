@@ -1,74 +1,41 @@
 import collection.CollectionManager;
-import file.FileManager;
 import command.CommandInvoker;
+import database.DatabaseManager;
 import network.ServerNetworkService;
-import data.LabWork;
-
-import java.io.File;
-import java.util.LinkedList;
-import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ServerApp {
-    public static void main(String[] args) {
-        System.out.println("Запуск сервера...");
+    private static final Logger logger = LoggerFactory.getLogger(ServerApp.class);
 
-        String fileName = System.getenv("LAB5_FILE");
-        if (fileName == null) {
-            System.err.println("Ошибка: Переменная окружения LAB5_FILE не установлена!");
-            return;
-        }
+    public static void main(String[] args) {
+        logger.info("=== ЗАПУСК СЕРВЕРА ===");
 
         try {
-            File file = new File(fileName);
-            FileManager fileManager = new FileManager(file);
+            DatabaseManager dbManager = new DatabaseManager();
+            logger.info("DatabaseManager initialized");
 
-            LinkedList<LabWork> collectionData;
-            if (!file.exists() || file.length() == 0) {
-                collectionData = new LinkedList<>();
-                fileManager.saveToFile(collectionData);
-                System.out.println("Файл не найден или пуст. Создан новый файл.");
-            } else {
-                collectionData = fileManager.readElementsFromFile();
-                System.out.println("Файл успешно загружен.");
-            }
+            var dbCollection = dbManager.loadAllLabWorks();
+            logger.info("Loaded {} elements from database", dbCollection.size());
 
-            CollectionManager collectionManager = new CollectionManager(collectionData);
-            System.out.println("Коллекция загружена. Элементов: " + collectionManager.getSize());
+            CollectionManager collectionManager = new CollectionManager(dbCollection);
 
-            CommandInvoker invoker = new CommandInvoker(collectionManager, fileManager);
+            CommandInvoker invoker = new CommandInvoker(collectionManager, dbManager);
 
-
-            int port = 5001;
-            ServerNetworkService networkService = new ServerNetworkService(port, invoker);
-            if (!collectionData.isEmpty()) {
-                long maxId = collectionData.stream()
-                        .mapToLong(LabWork::getId)
-                        .max()
-                        .orElse(0);
-                LabWork.setNextId(maxId + 1);
-                System.out.println("Счетчик ID установлен на: " + (maxId + 1));
-            } else {
-                LabWork.setNextId(1);
-            }
-
-            System.out.println("Сервер слушает UDP порт " + port + "...");
-            System.out.println("Нажмите Ctrl+C для остановки и сохранения данных.");
+            ServerNetworkService server = new ServerNetworkService(5001, invoker, dbManager);
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                System.out.println("\nОстановка сервера. Сохранение коллекции...");
-                try {
-                    fileManager.saveToFile(collectionManager.getCollection());
-                    System.out.println("Данные сохранены.");
-                } catch (Exception e) {
-                    System.err.println("Ошибка сохранения: " + e.getMessage());
-                }
+                logger.info("Stopping server...");
+                try { Thread.sleep(500); } catch (InterruptedException e) {}
+                logger.info("Server stopped");
             }));
 
-            networkService.start();
+            logger.info("Server started on port 5001");
+            server.start();
 
         } catch (Exception e) {
-            System.err.println("Критическая ошибка запуска: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Critical server error: {}", e.getMessage(), e);
+            System.exit(1);
         }
     }
 }

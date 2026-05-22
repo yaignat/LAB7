@@ -32,6 +32,7 @@ public class LabWork implements Serializable, Comparable<LabWork> {
     private double personalQualitiesMaximum;
     private Difficulty difficulty;
     private Discipline discipline;
+    private int ownerId;
 
     /**
      * Конструктор для создания новой лабораторной работы пользователем.
@@ -100,6 +101,7 @@ public class LabWork implements Serializable, Comparable<LabWork> {
         if (disc == null) throw new IllegalArgumentException("Discipline не может быть null");
     }
 
+    public int getOwnerId() { return ownerId; }
     public Long getId() { return id; }
     public String getName() { return name; }
     public Coordinates getCoordinates() { return coordinates; }
@@ -109,6 +111,7 @@ public class LabWork implements Serializable, Comparable<LabWork> {
     public Difficulty getDifficulty() { return difficulty; }
     public Discipline getDiscipline() { return discipline; }
 
+    public void setOwnerId(int ownerId) { this.ownerId = ownerId; }
     public void setName(String name) { this.name = name; }
     public void setCoordinates(Coordinates coordinates) { this.coordinates = coordinates; }
     public void setMinimalPoint(float minimalPoint) { this.minimalPoint = minimalPoint; }

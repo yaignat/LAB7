@@ -1,7 +1,7 @@
 package network;
 
 import commands.Command;
-
+import Network.RequestWrapper;
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -10,46 +10,47 @@ import java.nio.channels.DatagramChannel;
 public class ClientNetworkService {
     private final DatagramChannel channel;
     private final InetSocketAddress serverAddress;
+    private final String login;
+    private final String passwordHash;
 
-    public ClientNetworkService(String host, int port) throws IOException {
+    public ClientNetworkService(String host, int port, String login, String passwordHash) throws IOException {
         this.channel = DatagramChannel.open();
         this.channel.configureBlocking(false);
         this.serverAddress = new InetSocketAddress(host, port);
-        System.out.println("Подключение к серверу " + host + ":" + port);
+        this.login = login;
+        this.passwordHash = passwordHash;
     }
 
     public String sendCommand(Command command) throws IOException, ClassNotFoundException, InterruptedException {
-        byte[] data = serialize(command);
+        RequestWrapper wrapper = new RequestWrapper(login, passwordHash, command);
+        byte[] data = serialize(wrapper);
         ByteBuffer buffer = ByteBuffer.wrap(data);
         channel.send(buffer, serverAddress);
 
-        ByteBuffer responseBuffer = ByteBuffer.allocate(65535);
-
-        for (int i = 0; i < 3; i++) {
+        channel.configureBlocking(true);
+        try {
+            ByteBuffer responseBuffer = ByteBuffer.allocate(65535);
             responseBuffer.clear();
 
-            try {
-                InetSocketAddress sender = (InetSocketAddress) channel.receive(responseBuffer);
+            InetSocketAddress sender = (InetSocketAddress) channel.receive(responseBuffer);
 
-                if (sender != null) {
-                    responseBuffer.flip();
-                    byte[] respData = new byte[responseBuffer.remaining()];
-                    responseBuffer.get(respData);
-                    return (String) deserialize(respData);
-                }
-            } catch (IOException e) {
-                System.err.println("Ошибка сети при ожидании ответа: " + e.getMessage());
+            if (sender != null) {
+                responseBuffer.flip();
+                byte[] respData = new byte[responseBuffer.remaining()];
+                responseBuffer.get(respData);
+                return (String) deserialize(respData);
             }
-            Thread.sleep(1000);
+        } finally {
+            channel.configureBlocking(false);
         }
-        throw new IOException("Сервер не отвечает после 3 попыток.");
+
+        throw new IOException("Server timeout");
     }
 
     private byte[] serialize(Object obj) throws IOException {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
              ObjectOutputStream oos = new ObjectOutputStream(bos)) {
             oos.writeObject(obj);
-            oos.flush();
             return bos.toByteArray();
         }
     }

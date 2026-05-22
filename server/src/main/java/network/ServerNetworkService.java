@@ -1,7 +1,8 @@
 package network;
 
-import commands.Command;
 import command.CommandInvoker;
+import database.DatabaseManager;
+import Network.RequestWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,27 +14,34 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ServerNetworkService {
     private static final Logger logger = LoggerFactory.getLogger(ServerNetworkService.class);
+
     private final int port;
     private final CommandInvoker invoker;
+    private final DatabaseManager dbManager;
+    private final ExecutorService senderPool = Executors.newCachedThreadPool();
 
-    public ServerNetworkService(int port, CommandInvoker invoker) {
+    public ServerNetworkService(int port, CommandInvoker invoker, DatabaseManager dbManager) {
         this.port = port;
         this.invoker = invoker;
+        this.dbManager = dbManager;
     }
 
     public void start() {
+        logger.info("Starting UDP server on port {}", port);
+
         try (DatagramChannel channel = DatagramChannel.open()) {
             channel.configureBlocking(false);
-            channel.socket().bind(new InetSocketAddress(port));
+            channel.bind(new InetSocketAddress(port));
 
             Selector selector = Selector.open();
             channel.register(selector, SelectionKey.OP_READ);
 
-            logger.info("Сервер запущен на порту {}", port);
-            logger.info("Ожидание подключений клиентов...");
+            logger.info("Server ready");
 
             while (!Thread.currentThread().isInterrupted()) {
                 selector.select();
@@ -46,68 +54,104 @@ public class ServerNetworkService {
                     iterator.remove();
 
                     if (key.isReadable()) {
-                        handleRead(channel);
+                        new Thread(() -> handleRequest(channel)).start();
                     }
                 }
             }
-        } catch (IOException e) {
-            logger.error("Ошибка сети: {}", e.getMessage());
-            e.printStackTrace();
+        } catch (Exception e) {
+            logger.error("Server error: {}", e.getMessage(), e);
         } finally {
-            logger.info("Сервер остановлен.");
+            senderPool.shutdown();
         }
     }
 
-    private void handleRead(DatagramChannel channel) throws IOException {
-        ByteBuffer buffer = ByteBuffer.allocate(65535);
-        buffer.clear();
+    private void handleRequest(DatagramChannel channel) {
+        logger.info(">>> НАЧАЛО ОБРАБОТКИ ЗАПРОСА <<<");
 
-        InetSocketAddress clientAddress = (InetSocketAddress) channel.receive(buffer);
+        InetSocketAddress clientAddress = null;
 
-        if (clientAddress != null) {
+        try {
+            ByteBuffer buffer = ByteBuffer.allocate(65535);
+            buffer.clear();
+
+            logger.info("Ожидание получения пакета...");
+            clientAddress = (InetSocketAddress) channel.receive(buffer);
+
+            if (clientAddress == null) {
+                logger.warn("Получен null адрес клиента!");
+                return;
+            }
+
+            logger.info("Пакет получен от: {}", clientAddress.getAddress().getHostAddress());
+
             buffer.flip();
             byte[] data = new byte[buffer.remaining()];
             buffer.get(data);
+            logger.info("Размер полученных данных: {} байт", data.length);
 
-            try {
-                Command command = deserialize(data);
-                logger.info("Получена команда '{}' от {}", command.getType(), clientAddress);
+            RequestWrapper wrapper;
+            try (ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(data))) {
+                wrapper = (RequestWrapper) ois.readObject();
+                logger.info("RequestWrapper десериализован успешно");
+            }
 
-                String result = invoker.execute(command);
+            logger.info("Login из wrapper: '{}'", wrapper.getLogin());
+            logger.info("PasswordHash из wrapper: '{}' (длина: {})",
+                    wrapper.getPasswordHash(),
+                    wrapper.getPasswordHash() != null ? wrapper.getPasswordHash().length() : 0);
+            logger.info("Command type: '{}'", wrapper.getCommand() != null ? wrapper.getCommand().getType() : "NULL");
 
-                byte[] responseData = serialize(result);
-                ByteBuffer responseBuffer = ByteBuffer.wrap(responseData);
-                channel.send(responseBuffer, clientAddress);
-                logger.debug("Ответ отправлен клиенту {}", clientAddress);
+            int userId = dbManager.validateUser(wrapper.getLogin(), wrapper.getPasswordHash());
+            logger.info("Результат авторизации - userId: {}", userId);
 
-            } catch (ClassNotFoundException e) {
-                logger.error("Ошибка десериализации: класс не найден", e);
-                sendError(channel, clientAddress, "Ошибка: неизвестный тип команды");
-            } catch (Exception e) {
-                logger.error("Ошибка при выполнении команды: {}", e.getMessage());
-                sendError(channel, clientAddress, "Ошибка сервера: " + e.getMessage());
+            if (userId == -1) {
+                logger.warn("Auth failed для пользователя: '{}'", wrapper.getLogin());
+                sendResponse(channel, clientAddress, "Auth failed: invalid login or password");
+                return;
+            }
+
+            String result = invoker.execute(wrapper.getCommand(), userId, wrapper.getLogin());
+
+            final DatagramChannel finalChannel = channel;
+            final InetSocketAddress finalClientAddress = clientAddress;
+            final String finalResult = result;
+
+            senderPool.submit(() -> {
+                try {
+                    sendResponse(finalChannel, finalClientAddress, finalResult);
+                    logger.debug("Ответ отправлен клиенту {}", finalClientAddress);
+                } catch (IOException e) {
+                    logger.error("Ошибка отправки ответа: {}", e.getMessage());
+                }
+            });
+
+        } catch (ClassNotFoundException e) {
+            logger.error("Ошибка десериализации: {}", e.getMessage(), e);
+            if (clientAddress != null) {
+                try { sendResponse(channel, clientAddress, "Invalid request format"); }
+                catch (IOException ignored) {}
+            }
+        } catch (Exception e) {
+            logger.error("КРИТИЧЕСКАЯ ОШИБКА обработки запроса: {}", e.getMessage(), e);
+            e.printStackTrace(); // ← ВАЖНО: полный стектрейс
+            if (clientAddress != null) {
+                try { sendResponse(channel, clientAddress, "Internal server error"); }
+                catch (IOException ignored) {}
             }
         }
     }
 
-    private void sendError(DatagramChannel channel, InetSocketAddress address, String message) throws IOException {
-        byte[] data = serialize(message);
-        channel.send(ByteBuffer.wrap(data), address);
-    }
+    private void sendResponse(DatagramChannel channel, InetSocketAddress address, String message)
+            throws IOException {
 
-    private Command deserialize(byte[] data) throws IOException, ClassNotFoundException {
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(data);
-             ObjectInputStream ois = new ObjectInputStream(bis)) {
-            return (Command) ois.readObject();
-        }
-    }
-
-    private byte[] serialize(Object obj) throws IOException {
+        byte[] data;
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
              ObjectOutputStream oos = new ObjectOutputStream(bos)) {
-            oos.writeObject(obj);
-            oos.flush();
-            return bos.toByteArray();
+            oos.writeObject(message);
+            data = bos.toByteArray();
         }
+
+        ByteBuffer buffer = ByteBuffer.wrap(data);
+        channel.send(buffer, address);
     }
 }
