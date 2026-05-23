@@ -8,7 +8,7 @@
     <artifactId>lab7-network</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>Lab7-Network</name>
+    <name>Lab7-network</name>
     <description>Lab 7: PostgreSQL + Multithreading</description>
 
     <modules>

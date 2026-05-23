@@ -22,8 +22,6 @@ public class LabWork implements Serializable, Comparable<LabWork> {
     @Serial
     private static final long serialVersionUID = 1L;
 
-    private static long nextId = 1;
-
     private Long id;
     private String name;
     private Coordinates coordinates;
@@ -50,7 +48,6 @@ public class LabWork implements Serializable, Comparable<LabWork> {
                    double personalQualitiesMaximum, Difficulty difficulty, Discipline discipline) {
         validate(name, minimalPoint, personalQualitiesMaximum, difficulty, discipline);
 
-        this.id = nextId++;
         this.creationDate = new Date();
         this.name = name;
         this.coordinates = coordinates;
@@ -88,9 +85,6 @@ public class LabWork implements Serializable, Comparable<LabWork> {
         this.difficulty = difficulty;
         this.discipline = discipline;
 
-        if (id >= nextId) {
-            nextId = id + 1;
-        }
     }
 
     private void validate(String name, float minimalPoint, double pqMax, Difficulty diff, Discipline disc) {
@@ -119,7 +113,6 @@ public class LabWork implements Serializable, Comparable<LabWork> {
     public void setDifficulty(Difficulty difficulty) { this.difficulty = difficulty; }
     public void setDiscipline(Discipline discipline) { this.discipline = discipline; }
     public void setId(Long id) {this.id = id;}
-    public static void setNextId(long id) { nextId = id; }
     public void setCreationDate(Date creationDate) { this.creationDate = creationDate;}
 
     @Override

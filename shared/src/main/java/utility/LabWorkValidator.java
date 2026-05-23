@@ -33,6 +33,5 @@ public class LabWorkValidator {
             }
             maxId = Math.max(maxId, lw.getId());
         }
-        LabWork.setNextId(maxId + 1);
     }
 }

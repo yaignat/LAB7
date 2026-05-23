@@ -12,8 +12,8 @@ import java.util.Optional;
 
 public class DatabaseManager {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseManager.class);
-    private static final String URL = "jdbc:postgresql://localhost:5432/studs";
-    private static final String HOST = "localhost";
+    private static final String URL = "jdbc:postgresql://pg:5432/studs";
+    private static final String HOST = "bg";
     private static final int PORT = 5432;
     private static final String DATABASE = "studs";
     private static final String[] CREDS = PgPassReader.loadCredentials(HOST, PORT, DATABASE);
@@ -25,9 +25,9 @@ public class DatabaseManager {
     }
 
     public int validateUser(String login, String hash) {
-        logger.info("=== ПРОВЕРКА АВТОРИЗАЦИИ ===");
-        logger.info("Login: '{}'", login);
-        logger.info("Hash: '{}'", hash);
+        if (logger.isDebugEnabled()) {
+            logger.debug("Проверка авторизации: login='{}'", login);
+        }
 
         String sql = "SELECT id FROM users WHERE login=? AND password_hash=?";
         try (Connection c = getConnection();
@@ -35,33 +35,18 @@ public class DatabaseManager {
             ps.setString(1, login);
             ps.setString(2, hash);
 
-            logger.info("Выполняется SQL: {}", sql);
-            logger.info("Параметры: login='{}', hash='{}'", login, hash);
-
             ResultSet rs = ps.executeQuery();
             if (rs.next()) {
                 int id = rs.getInt("id");
-                logger.info("Пользователь найден! ID: {}", id);
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Пользователь '{}' авторизован, ID: {}", login, id);
+                }
                 return id;
             } else {
-                logger.warn("Пользователь НЕ найден в базе!");
-
-                String checkSql = "SELECT id, login, password_hash FROM users WHERE login=?";
-                try (PreparedStatement checkPs = c.prepareStatement(checkSql)) {
-                    checkPs.setString(1, login);
-                    ResultSet checkRs = checkPs.executeQuery();
-                    if (checkRs.next()) {
-                        logger.warn("Логин '{}' найден, но хэш не совпадает!", login);
-                        logger.warn("Хэш в базе: '{}'", checkRs.getString("password_hash"));
-                        logger.warn("Хэш от клиента: '{}'", hash);
-                        logger.warn("Совпадение: {}", hash.equals(checkRs.getString("password_hash")));
-                    } else {
-                        logger.warn("Логин '{}' вообще не найден в таблице users!", login);
-                    }
-                }
+                logger.warn("Неудачная авторизация для пользователя '{}': не найден или неверный пароль", login);
             }
         } catch (SQLException e) {
-            logger.error("Auth error: {}", e.getMessage(), e);
+            logger.error("Ошибка при проверке пользователя '{}': {}", login, e.getMessage(), e);
         }
         return -1;
     }

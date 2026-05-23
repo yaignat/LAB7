@@ -20,7 +20,6 @@ public class CommandInvoker {
     }
 
     public String execute(Command cmd, int userId, String login) {
-        // Проверка на null
         if (cmd == null) {
             logger.error("Получена null команда!");
             return "Ошибка: пустая команда";
@@ -81,6 +80,28 @@ public class CommandInvoker {
                 case "add_if_max":
                     logger.info("Обработка команды add_if_max");
                     return handleAddIfMax((AddIfMaxCommand) cmd, userId, login);
+
+                case "register":
+                    logger.info("Обработка команды register");
+                    RegisterCommand regCmd = (RegisterCommand) cmd;
+
+                    String regLogin = regCmd.getLogin();
+                    if (regLogin == null || regLogin.length() < 3 || regLogin.length() > 20) {
+                        return "Ошибка: логин должен содержать от 3 до 20 символов";
+                    }
+
+                    String regHash = regCmd.getPasswordHash();
+                    if (regHash == null || regHash.isEmpty()) {
+                        return "Ошибка: пароль не может быть пустым";
+                    }
+
+                    if (dbManager.registerUser(regLogin, regHash)) {
+                        logger.info("Пользователь '{}' успешно зарегистрирован", regLogin);
+                        return "Пользователь '" + regLogin + "' успешно зарегистрирован! Теперь вы можете войти.";
+                    } else {
+                        logger.warn("Не удалось зарегистрировать '{}': возможно, логин занят", regLogin);
+                        return "Ошибка: пользователь с таким логином уже существует";
+                    }
 
                 default:
                     logger.error("НЕИЗВЕСТНАЯ КОМАНДА: '{}'", cmdType);
